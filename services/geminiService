@@ -1,0 +1,125 @@
+import { GoogleGenAI, Modality } from "@google/genai";
+
+// Utility to convert a File object to a GoogleGenerativeAI.Part object
+const fileToGenerativePart = async (file: File) => {
+  const base64EncodedDataPromise = new Promise<string>((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        // The result includes the full data URI, we need to extract just the base64 part
+        resolve(reader.result.split(',')[1]);
+      } else {
+        // Handle ArrayBuffer case if necessary, though readAsDataURL should give string
+        resolve(''); // Or handle error appropriately
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+  
+  return {
+    inlineData: { data: await base64EncodedDataPromise, mimeType: file.type },
+  };
+};
+
+
+export const generateImage = async (prompt: string, imageFiles: (File | null)[]): Promise<string> => {
+    if (!process.env.API_KEY) {
+        throw new Error("API key is not configured. Please set the API_KEY environment variable.");
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    if (!prompt.trim()) {
+        throw new Error("Harap berikan prompt teks.");
+    }
+
+    const activeImages = imageFiles.filter((f): f is File => f !== null);
+    if (activeImages.length === 0) {
+        throw new Error("Harap unggah setidaknya satu gambar.");
+    }
+
+    try {
+        const parts: any[] = [];
+        
+        // Add instructions for face reference if the 3rd image is present
+        let enhancedPrompt = prompt;
+        if (imageFiles[2]) {
+            enhancedPrompt += "\n\nINSTRUKSI PENTING: Gunakan gambar terakhir (gambar ke-3) sebagai referensi wajah untuk model dalam foto. Pastikan proporsi wajah sesuai dengan tubuh model, tidak terlalu besar atau terlalu kecil. Wajah harus menyatu secara alami dengan pencahayaan dan gaya gambar keseluruhan.";
+        }
+        
+        parts.push({ text: enhancedPrompt });
+
+        // Convert all active images to parts
+        for (let i = 0; i < imageFiles.length; i++) {
+            const file = imageFiles[i];
+            if (file) {
+                const part = await fileToGenerativePart(file);
+                parts.push(part);
+            }
+        }
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts },
+            config: {
+                responseModalities: [Modality.IMAGE],
+                imageConfig: {
+                    aspectRatio: "9:16",
+                },
+            },
+        });
+        
+        // Find the first part in the response that contains image data
+        for (const part of response.candidates[0].content.parts) {
+            if (part.inlineData && part.inlineData.data) {
+                // Return the image as a data URI that can be used in an <img> tag
+                return `data:image/png;base64,${part.inlineData.data}`;
+            }
+        }
+
+        throw new Error("API tidak menghasilkan gambar. Silakan coba prompt yang berbeda.");
+
+    } catch (error) {
+        console.error("Gemini API call failed:", error);
+        // Provide a more user-friendly error message
+        if (error instanceof Error && error.message.includes('API key not valid')) {
+            throw new Error('Kunci API tidak valid. Harap periksa konfigurasi Anda.');
+        }
+        throw new Error("Gagal menghasilkan gambar. Silakan coba lagi nanti.");
+    }
+};
+
+export const generateDescription = async (images: File[]): Promise<string> => {
+    if (!process.env.API_KEY) {
+        throw new Error("API key is not configured.");
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+    if (images.length === 0) {
+        throw new Error("Harap unggah setidaknya satu gambar untuk dideskripsikan.");
+    }
+
+    try {
+        const imageParts = await Promise.all(images.map(fileToGenerativePart));
+        
+        // Construct the prompt for the model
+        const parts: any[] = [
+            { text: "Analisis gambar ini sebagai referensi gaya fotografi produk (mockup). Buatkan prompt deskriptif dalam Bahasa Indonesia. HARUS diawali dengan frasa persis: 'buatkan saya foto dari produk yang di upload'. Selanjutnya, deskripsikan dengan detail komposisinya (misalnya 'sebuah tangan memegang produk', posisi jari, sudut pengambilan gambar), latar belakang (warna, tekstur, blur), dan pencahayaan. PENTING: Jangan mendeskripsikan detail fisik spesifik dari benda itu sendiri (seperti warna sendal atau mereknya), melainkan sebut itu sebagai 'produk' atau 'objek' agar prompt ini bisa digunakan sebagai template untuk produk lain." }
+        ];
+        parts.push(...imageParts);
+
+        // Use gemini-2.5-flash for multimodal (image -> text) tasks
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts },
+        });
+
+        return response.text || "Tidak ada deskripsi yang dihasilkan.";
+
+    } catch (error) {
+        console.error("Gemini API call failed:", error);
+        if (error instanceof Error && error.message.includes('API key not valid')) {
+            throw new Error('Kunci API tidak valid. Harap periksa konfigurasi Anda.');
+        }
+        throw new Error("Gagal menghasilkan deskripsi. Silakan coba lagi nanti.");
+    }
+};
