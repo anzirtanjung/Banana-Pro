@@ -1,0 +1,68 @@
+import React, { useRef } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
+
+interface ImageUploadSlotProps {
+  imagePreview: string | null;
+  onImageSelect: (file: File) => void;
+  onImageRemove: () => void;
+  index: number;
+  label?: string;
+}
+
+
+export const ImageUploadSlot: React.FC<ImageUploadSlotProps> = ({ imagePreview, onImageSelect, onImageRemove, label }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleContainerClick = () => {
+    if (!imagePreview) {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      onImageSelect(file);
+    }
+    // Reset file input value to allow re-uploading the same file
+    event.target.value = '';
+  };
+
+  return (
+    <div className="flex flex-col items-center space-y-2 w-full">
+      <div
+        className="relative aspect-square w-full rounded-lg border-2 border-dashed border-gray-600 flex items-center justify-center transition-all duration-300 hover:border-indigo-500 hover:bg-gray-800 group cursor-pointer"
+        onClick={handleContainerClick}
+      >
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          className="hidden"
+          accept="image/png, image/jpeg, image/webp"
+        />
+        {imagePreview ? (
+          <>
+            <img src={imagePreview} alt="Preview" className="object-cover w-full h-full rounded-md" />
+            <button
+              onClick={(e) => {
+                e.stopPropagation(); // Prevent triggering the container click
+                onImageRemove();
+              }}
+              className="absolute top-1 right-1 bg-black/50 p-1.5 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
+              aria-label="Hapus gambar"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </>
+        ) : (
+          <div className="text-center text-gray-500">
+            <Plus className="w-8 h-8 mx-auto mb-1 transition-transform group-hover:scale-110 text-gray-400" />
+            <span className="text-xs sm:text-sm">Upload</span>
+          </div>
+        )}
+      </div>
+      {label && <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">{label}</span>}
+    </div>
+  );
+};
