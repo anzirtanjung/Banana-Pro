@@ -1,0 +1,5 @@
+{
+  "name": "Remix: Nano Banana Pro",
+  "description": "An AI-powered web app that generates a new image based on a descriptive text prompt and up to three user-uploaded images.",
+  "requestFramePermissions": []
+}
